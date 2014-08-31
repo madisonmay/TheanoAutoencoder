@@ -10,9 +10,9 @@ from  theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 
 from load import load_mnist
 
-from vis import *
-from trainers import *
-
+from vis import unit_scale, grayscale_grid_vis
+from trainers import Momentum
+from layers import InputLayer, HiddenLayer
 
 def mse(targets, preds):
     return np.mean(np.square(targets - preds))
@@ -25,12 +25,9 @@ class AutoEncoder(object):
     A generic theano autoencoder
     """
 
-    def __init__(self, n_vis, n_hidden, activation, trainer, loss, lr, m, lr_decay, batch_size, n_batches, n_epochs):
+    def __init__(self, n_vis, layers, trainer, loss, batch_size, n_batches, n_epochs):
         self.batch_size = batch_size
-        self.lr = theano.shared(np.asarray(lr,dtype=theano.config.floatX))
-        self.m = m
         self.trainer = trainer
-        self.lr_decay = lr_decay
         self.n_batches = n_batches
         self.n_epochs = n_epochs
         self.epoch = 0
@@ -39,10 +36,11 @@ class AutoEncoder(object):
         self.batch_X = theano.shared(np.zeros((n_batches * batch_size, n_vis), dtype=theano.config.floatX), borrow=True)
         self.batch_y = theano.shared(np.zeros((n_batches * batch_size, n_vis), dtype=theano.config.floatX), borrow=True)
 
-        self.input_layer = InputLayer(n_vis)
-        self.hidden_layer = HiddenLayer(self.input_layer, n_hidden, activation)
-        self.output_layer = HiddenLayer(self.hidden_layer, n_vis, activation)
-        self.layers = [self.input_layer, self.hidden_layer, self.output_layer]
+        self.layers = layers
+        self.input_layer = self.layers[0]
+        self.output_layer = self.layers[-1]
+
+        self.setup_layers()
 
         self.idx = T.lscalar('idx')
 
@@ -59,11 +57,17 @@ class AutoEncoder(object):
         self.loss = T.mean(self._loss(self.output_layer.output, self.input_layer.input))
         self.params = list(chain.from_iterable((layer.params for layer in self.layers)))
         self.grads = [T.grad(self.loss, param) for param in self.params]
-        self.updates = self.trainer(self.params,self.grads,self.lr,self.m)
+        self.updates = self.trainer.get_updates(self.params,self.grads)
 
         self.train = theano.function([self.idx], self.loss, givens=self.givens, updates=self.updates)
         self.fprop = theano.function([self.idx], self.output_layer.output, givens=self.givens)
         self.eval_loss = theano.function([self.idx], self.loss, givens=self.givens)
+
+    def setup_layers(self):
+        prev_layer = self.layers[0]
+        for layer in self.layers[1:]:
+            layer.setup(prev_layer)
+            prev_layer = layer
 
     def iter_data(self, X):
         # Should take an input and target pair
@@ -82,8 +86,8 @@ class AutoEncoder(object):
         loss = np.mean([self.eval_loss(batch) for batch in self.iter_data(X)])
         print "%.3f epoch" % self.epoch
         print "%.3f loss" % loss
-        print "%.3f learning rate"%self.lr.get_value()
-        print "%.3f n per second"%(self.examples/(time()-self.t))
+        print "%.3f learning rate"%self.trainer.lr.get_value()
+        print "%.3f examples per second"%(self.examples/(time()-self.t))
 
     def fit(self, trX, teX):
         self.t = time()
@@ -93,7 +97,6 @@ class AutoEncoder(object):
                 self.train(batch)
                 self.examples += self.batch_size
             self.epoch += 1
-            self.lr.set_value((self.lr.get_value()*self.lr_decay).astype(theano.config.floatX))
 
     def predict(self, X):
         """
@@ -106,41 +109,24 @@ class AutoEncoder(object):
 
         return np.vstack(predictions)
 
-class InputLayer(object):
-    """
-    Input layer to theano autoencoder
-    """
-
-    def __init__(self, n_vis):
-        self.n_vis = n_vis
-        self.output_shape = self.n_vis
-        self.input = T.matrix('input')
-        self.params = []
-        self.output = self.input
-
-class HiddenLayer(object):
-    """
-    Hidden layer for theano autoencoder
-    """
-
-    def __init__(self, input_layer, n_outputs, activation):
-        self.activation = activation
-        self.input_layer = input_layer
-        self.input = input_layer.output
-        self.output_shape = n_outputs
-        self.W = theano.shared(np.random.random((self.input_layer.output_shape, n_outputs)).astype(theano.config.floatX)*.01)
-        self.b = theano.shared(np.zeros(n_outputs,dtype=theano.config.floatX))
-        self.params = (self.W, self.b)
-        self.output = self.activation(T.dot(self.input, self.W) + self.b.dimshuffle('x', 0))
-
-
 if __name__ == "__main__":
-    print theano.config.device
-    trX, _, teX, _ = load_mnist()
+    data_dir = '/home/mmay/data/mnist'
+    trX, _, teX, _ = load_mnist(data_dir)
     bce = T.nnet.binary_crossentropy
     # Factor out trainer
     # Generalize to multiple layers
-    model = AutoEncoder(n_vis=784, n_hidden=512, activation=T.nnet.sigmoid, trainer=momentum, loss=bce, lr=0.1, m=0.9,lr_decay=0.99, batch_size=128, n_batches=32, n_epochs=100)
+    n_vis=784
+    n_hidden=512
+    activation = T.nnet.sigmoid
+    layers = [
+        InputLayer(n_vis),
+        HiddenLayer(n_hidden, activation),
+        HiddenLayer(n_hidden, activation),
+        HiddenLayer(n_vis, activation)
+    ]
+
+    trainer = Momentum(lr=0.1, m=0.9, lr_decay=0.99)
+    model = AutoEncoder(n_vis=n_vis, layers=layers, trainer=trainer, loss=bce, batch_size=128, n_batches=32, n_epochs=500)
     model.fit(trX, teX)
 
     w = model.hidden_layer.W.get_value().T
