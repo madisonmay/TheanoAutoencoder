@@ -1,6 +1,7 @@
 from itertools import chain
 from itertools import izip
 from collections import OrderedDict
+from time import time
 
 import numpy as np
 import theano
@@ -8,6 +9,8 @@ import theano.tensor as T
 from  theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 
 from load import load_mnist
+
+from vis import *
 
 
 def mse(targets, preds):
@@ -27,6 +30,7 @@ class AutoEncoder(object):
         self.n_batches = n_batches
         self.n_epochs = n_epochs
         self.epoch = 0
+        self.examples = 0
 
         self.batch_X = theano.shared(np.zeros((n_batches * batch_size, n_vis), dtype=theano.config.floatX), borrow=True)
         self.batch_y = theano.shared(np.zeros((n_batches * batch_size, n_vis), dtype=theano.config.floatX), borrow=True)
@@ -54,7 +58,7 @@ class AutoEncoder(object):
 
         self.train = theano.function([self.idx], self.loss, givens=self.givens, updates=self.updates)
         self.fprop = theano.function([self.idx], self.output_layer.output, givens=self.givens)
-
+        self.eval_loss = theano.function([self.idx], self.loss, givens=self.givens)
 
     def iter_data(self, X):
         chunk_size = self.batch_size * self.n_batches
@@ -68,16 +72,18 @@ class AutoEncoder(object):
                 yield batch
 
     def monitor(self, X):
-        print "Epoch: %s" % self.epoch
-        preds = self.predict(X)
-        loss = mse(X[:len(preds)], preds)
-        print "Loss: %s" % loss
+        loss = np.mean([self.eval_loss(batch) for batch in self.iter_data(X)])
+        print "%.3f epoch" % self.epoch
+        print "%.3f loss" % loss
+        print "%.3f n per second"%(self.examples/(time()-self.t))
 
     def fit(self, trX, teX):
+        self.t = time()
         for epoch in range(self.n_epochs):
             self.monitor(teX)
             for batch in self.iter_data(trX):
                 self.train(batch)
+                self.examples += self.batch_size
             self.epoch += 1
 
     def predict(self, X):
@@ -120,8 +126,10 @@ class HiddenLayer(object):
 
 
 if __name__ == "__main__":
-    data_dir = '/home/mmay/data/mnist'
-    trX, _, teX, _ = load_mnist(data_dir)
+    trX, _, teX, _ = load_mnist()
     bce = T.nnet.binary_crossentropy
-    model = AutoEncoder(n_vis=784, n_hidden=100, activation=T.nnet.sigmoid, loss=bce, lr=0.01, batch_size=128, n_batches=64, n_epochs=5)
+    model = AutoEncoder(n_vis=784, n_hidden=100, activation=T.nnet.sigmoid, loss=bce, lr=0.01, batch_size=128, n_batches=32, n_epochs=10)
     model.fit(trX, teX)
+
+    w = model.hidden_layer.W.get_value().T
+    grayscale_grid_vis(w,transform=unit_scale,show=True)
