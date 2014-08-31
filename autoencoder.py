@@ -11,6 +11,7 @@ from  theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 from load import load_mnist
 
 from vis import *
+from trainers import *
 
 
 def mse(targets, preds):
@@ -24,9 +25,12 @@ class AutoEncoder(object):
     A generic theano autoencoder
     """
 
-    def __init__(self, n_vis, n_hidden, activation, loss, lr, batch_size, n_batches, n_epochs):
+    def __init__(self, n_vis, n_hidden, activation, trainer, loss, lr, m, lr_decay, batch_size, n_batches, n_epochs):
         self.batch_size = batch_size
-        self.lr = lr
+        self.lr = theano.shared(np.asarray(lr,dtype=theano.config.floatX))
+        self.m = m
+        self.trainer = trainer
+        self.lr_decay = lr_decay
         self.n_batches = n_batches
         self.n_epochs = n_epochs
         self.epoch = 0
@@ -54,7 +58,7 @@ class AutoEncoder(object):
         self.loss = T.mean(self._loss(self.output_layer.output, self.input_layer.input))
         self.params = list(chain.from_iterable((layer.params for layer in self.layers)))
         self.grads = [T.grad(self.loss, param) for param in self.params]
-        self.updates = [(param, param - self.lr * grad) for param, grad in izip(self.params, self.grads)]
+        self.updates = self.trainer(self.params,self.grads,self.lr,self.m)
 
         self.train = theano.function([self.idx], self.loss, givens=self.givens, updates=self.updates)
         self.fprop = theano.function([self.idx], self.output_layer.output, givens=self.givens)
@@ -75,6 +79,7 @@ class AutoEncoder(object):
         loss = np.mean([self.eval_loss(batch) for batch in self.iter_data(X)])
         print "%.3f epoch" % self.epoch
         print "%.3f loss" % loss
+        print "%.3f learning rate"%self.lr.get_value()
         print "%.3f n per second"%(self.examples/(time()-self.t))
 
     def fit(self, trX, teX):
@@ -85,6 +90,7 @@ class AutoEncoder(object):
                 self.train(batch)
                 self.examples += self.batch_size
             self.epoch += 1
+            self.lr.set_value((self.lr.get_value()*self.lr_decay).astype(theano.config.floatX))
 
     def predict(self, X):
         """
@@ -119,17 +125,18 @@ class HiddenLayer(object):
         self.input_layer = input_layer
         self.input = input_layer.output
         self.output_shape = n_outputs
-        self.W = theano.shared(np.random.random((self.input_layer.output_shape, n_outputs))*.01)
-        self.b = theano.shared(np.zeros(n_outputs))
+        self.W = theano.shared(np.random.random((self.input_layer.output_shape, n_outputs)).astype(theano.config.floatX)*.01)
+        self.b = theano.shared(np.zeros(n_outputs,dtype=theano.config.floatX))
         self.params = (self.W, self.b)
         self.output = self.activation(T.dot(self.input, self.W) + self.b.dimshuffle('x', 0))
 
 
 if __name__ == "__main__":
+    print theano.config.device
     trX, _, teX, _ = load_mnist()
     bce = T.nnet.binary_crossentropy
-    model = AutoEncoder(n_vis=784, n_hidden=100, activation=T.nnet.sigmoid, loss=bce, lr=0.01, batch_size=128, n_batches=32, n_epochs=10)
+    model = AutoEncoder(n_vis=784, n_hidden=512, activation=T.nnet.sigmoid, trainer=momentum, loss=bce, lr=0.1, m=0.9,lr_decay=0.99, batch_size=128, n_batches=32, n_epochs=100)
     model.fit(trX, teX)
 
     w = model.hidden_layer.W.get_value().T
-    grayscale_grid_vis(w,transform=unit_scale,show=True)
+    grayscale_grid_vis(w,transform=lambda x:unit_scale(x.reshape(28,28)),show=True)
