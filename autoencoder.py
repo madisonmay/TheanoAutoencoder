@@ -46,6 +46,7 @@ class AutoEncoder(object):
 
         self.idx = T.lscalar('idx')
 
+        # check that we can move these in
         # self.batch_start = self.idx * batch_size
         # self.batch_end = (self.idx + 1) * batch_size
 
@@ -65,6 +66,8 @@ class AutoEncoder(object):
         self.eval_loss = theano.function([self.idx], self.loss, givens=self.givens)
 
     def iter_data(self, X):
+        # Should take an input and target pair
+        # Fix data clipping for predicting
         chunk_size = self.batch_size * self.n_batches
         n_chunks = X.shape[0] / chunk_size
         for chunk in range(n_chunks):
@@ -135,6 +138,8 @@ if __name__ == "__main__":
     print theano.config.device
     trX, _, teX, _ = load_mnist()
     bce = T.nnet.binary_crossentropy
+    # Factor out trainer
+    # Generalize to multiple layers
     model = AutoEncoder(n_vis=784, n_hidden=512, activation=T.nnet.sigmoid, trainer=momentum, loss=bce, lr=0.1, m=0.9,lr_decay=0.99, batch_size=128, n_batches=32, n_epochs=100)
     model.fit(trX, teX)
 
