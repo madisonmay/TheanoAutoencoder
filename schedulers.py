@@ -17,7 +17,7 @@ class Scheduler(object):
 
     @staticmethod
     def update(self):
-        raise NotImplementedError()
+        pass
 
 
 class ExponentialDecay(Scheduler):
@@ -27,3 +27,6 @@ class ExponentialDecay(Scheduler):
         current = self.get_value()
         updated = current * self.decay
         self.set_value(floatX(updated))
+
+class Constant(Scheduler):
+    pass

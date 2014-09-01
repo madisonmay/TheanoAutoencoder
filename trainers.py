@@ -1,22 +1,22 @@
-from itertools import chain
 from itertools import izip
-from collections import OrderedDict
-from time import time
 
 import numpy as np
 import theano
 import theano.tensor as T
+from theano.sandbox.cuda.var import CudaNdarraySharedVariable
 from  theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 
-# Initalize constanst to constant schedulers
-class SGD(object):
+from schedulers import Constant
 
-    def __init__(self, lr):
-        self.lr = lr
-        self.params = [self.lr]
+class Trainer(object):
 
-    def get_updates(self, params, grads):
-        return [(param, param - self.lr * grad) for param, grad in izip(params, grads)]
+    def __init__(self, **kwargs):
+        self.params = []
+        for k, v in kwargs.items():
+            if not isinstance(v, CudaNdarraySharedVariable):
+                v = Constant(v)
+            setattr(self, k, v)
+            self.params.append(v)
 
     def scheduler_updates(self):
         """
@@ -25,12 +25,14 @@ class SGD(object):
         for param in self.params:
             param.update()
 
-class Momentum(SGD):
 
-    def __init__(self, lr, m):
-        self.lr = lr
-        self.m = m
-        self.params = [self.lr]
+class SGD(Trainer):
+
+    def get_updates(self, params, grads):
+        return [(param, param - self.lr * grad) for param, grad in izip(params, grads)]
+
+
+class Momentum(Trainer):
 
     def get_updates(self, params, grads):
     	updates = []
