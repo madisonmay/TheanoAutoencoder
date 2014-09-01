@@ -16,7 +16,7 @@ class SGD(object):
         self.params = [self.lr]
 
     def get_updates(self, params, grads):
-	   return [(param, param - self.lr.value * grad) for param, grad in izip(params, grads)]
+        return [(param, param - self.lr * grad) for param, grad in izip(params, grads)]
 
     def scheduler_updates(self):
         """
@@ -36,7 +36,7 @@ class Momentum(SGD):
     	updates = []
     	for param, grad in zip(params,grads):
     		mp = theano.shared(param.get_value()*0.)
-    		v = self.m * mp - self.lr.value * grad
+    		v = self.m * mp - self.lr * grad
     		w = param + v
     		updates.append((mp,v))
     		updates.append((param,w))

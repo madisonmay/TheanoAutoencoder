@@ -16,7 +16,7 @@ from augmenters import SaltAndPepper
 from layers import InputLayer, HiddenLayer
 from schedulers import ExponentialDecay
 
-from matplotlib import pyplot as plt 
+from matplotlib import pyplot as plt
 
 def mse(targets, preds):
     return np.mean(np.square(targets - preds))
@@ -62,7 +62,7 @@ class AutoEncoder(object):
         self.loss = T.mean(self._loss(self.output_layer.output, self.input_layer.input))
         self.params = list(chain.from_iterable((layer.params for layer in self.layers)))
         self.grads = [T.grad(self.loss, param) for param in self.params]
-        self.updates = self.trainer.get_updates(self.params,self.grads)
+        self.updates = self.trainer.get_updates(self.params, self.grads)
 
         self.train = theano.function([self.idx], self.loss, givens=self.givens, updates=self.updates)
         self.fprop = theano.function([self.idx], self.output_layer.output, givens=self.givens)
@@ -91,7 +91,7 @@ class AutoEncoder(object):
         loss = np.mean([self.eval_loss(batch) for batch in self.iter_data(X)])
         print "%.3f epoch" % self.epoch
         print "%.3f loss" % loss
-        print "%.3f learning rate"%self.trainer.lr.value.get_value()
+        print "%.3f learning rate"%self.trainer.lr.get_value()
         print "%.3f examples per second"%(self.examples/(time()-self.t))
 
     def fit(self, trX, teX):
@@ -116,7 +116,7 @@ class AutoEncoder(object):
         return np.vstack(predictions)
 
 if __name__ == "__main__":
-    data_dir = '/media/datasets/mnist'
+    data_dir = '/home/mmay/data/mnist'
     trX, _, teX, _ = load_mnist(data_dir)
 
     augmenter = SaltAndPepper(low=0.,high=1.,p_corrupt=0.5)
@@ -134,7 +134,7 @@ if __name__ == "__main__":
         HiddenLayer(n_vis, activation)
     ]
 
-    
+
     lr_scheduler = ExponentialDecay(value=0.1, decay=0.99)
     trainer = Momentum(lr=lr_scheduler, m=0.9)
 
