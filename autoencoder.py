@@ -12,7 +12,11 @@ from load import load_mnist
 
 from vis import unit_scale, grayscale_grid_vis
 from trainers import Momentum
+from augmenters import SaltAndPepper
 from layers import InputLayer, HiddenLayer
+from schedulers import ExponentialDecay
+
+from matplotlib import pyplot as plt 
 
 def mse(targets, preds):
     return np.mean(np.square(targets - preds))
@@ -25,11 +29,12 @@ class AutoEncoder(object):
     A generic theano autoencoder
     """
 
-    def __init__(self, n_vis, layers, trainer, loss, batch_size, n_batches, n_epochs):
+    def __init__(self, n_vis, layers, trainer, loss, batch_size, n_batches, n_epochs, lr_decay):
         self.batch_size = batch_size
         self.trainer = trainer
         self.n_batches = n_batches
         self.n_epochs = n_epochs
+        self.lr_decay = lr_decay
         self.epoch = 0
         self.examples = 0
 
@@ -86,7 +91,7 @@ class AutoEncoder(object):
         loss = np.mean([self.eval_loss(batch) for batch in self.iter_data(X)])
         print "%.3f epoch" % self.epoch
         print "%.3f loss" % loss
-        print "%.3f learning rate"%self.trainer.lr.get_value()
+        print "%.3f learning rate"%self.trainer.lr.value.get_value()
         print "%.3f examples per second"%(self.examples/(time()-self.t))
 
     def fit(self, trX, teX):
@@ -97,6 +102,7 @@ class AutoEncoder(object):
                 self.train(batch)
                 self.examples += self.batch_size
             self.epoch += 1
+            self.trainer.scheduler_updates()
 
     def predict(self, X):
         """
@@ -110,24 +116,41 @@ class AutoEncoder(object):
         return np.vstack(predictions)
 
 if __name__ == "__main__":
-    data_dir = '/home/mmay/data/mnist'
+    data_dir = '/media/datasets/mnist'
     trX, _, teX, _ = load_mnist(data_dir)
+
+    augmenter = SaltAndPepper(low=0.,high=1.,p_corrupt=0.5)
+
     bce = T.nnet.binary_crossentropy
     # Factor out trainer
     # Generalize to multiple layers
     n_vis=784
-    n_hidden=512
+    n_hidden=2000
+    batch_size = 128
     activation = T.nnet.sigmoid
     layers = [
-        InputLayer(n_vis),
-        HiddenLayer(n_hidden, activation),
+        InputLayer(n_vis,batch_size=batch_size,augmenter=augmenter),
         HiddenLayer(n_hidden, activation),
         HiddenLayer(n_vis, activation)
     ]
 
-    trainer = Momentum(lr=0.1, m=0.9, lr_decay=0.99)
-    model = AutoEncoder(n_vis=n_vis, layers=layers, trainer=trainer, loss=bce, batch_size=128, n_batches=32, n_epochs=500)
+    
+    lr_scheduler = ExponentialDecay(value=0.1, decay=0.99)
+    trainer = Momentum(lr=lr_scheduler, m=0.9)
+
+    model = AutoEncoder(n_vis=n_vis, layers=layers, trainer=trainer, loss=bce, batch_size=batch_size, n_batches=32, n_epochs=100, lr_decay=0.99)
     model.fit(trX, teX)
 
-    w = model.hidden_layer.W.get_value().T
-    grayscale_grid_vis(w,transform=lambda x:unit_scale(x.reshape(28,28)),show=True)
+    w1 = model.layers[1].W.get_value().T
+    w2 = model.layers[2].W.get_value()
+    pred = model.predict(teX)
+
+    grayscale_grid_vis(pred[:100],transform=lambda x:unit_scale(x.reshape(28,28)),show=True)
+
+    img1 = grayscale_grid_vis(w1,transform=lambda x:unit_scale(x.reshape(28,28)),show=False)
+    img2 = grayscale_grid_vis(w2,transform=lambda x:unit_scale(x.reshape(28,28)),show=False)
+    plt.subplot(1,2,1)
+    plt.imshow(img1,cmap='gray')
+    plt.subplot(1,2,2)
+    plt.imshow(img2,cmap='gray')
+    plt.show()

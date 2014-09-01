@@ -8,10 +8,14 @@ class InputLayer(object):
     Input layer to theano autoencoder
     """
 
-    def __init__(self, n_vis):
+    def __init__(self, n_vis, batch_size, augmenter=None):
         self.n_vis = n_vis
+        self.batch_size = batch_size
         self.output_shape = self.n_vis
+        self.augmenter = augmenter
         self.input = T.matrix('input')
+        if self.augmenter is not None:
+            self.input = self.augmenter.augment(self.input,shape=(self.batch_size,self.n_vis))
         self.params = []
         self.output = self.input
 
